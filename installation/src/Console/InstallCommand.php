@@ -324,8 +324,16 @@ class InstallCommand extends AbstractCommand
                 $default = $prefix;
             }
 
+            $option = str_replace('_', '-', $field->fieldname);
+
+            // Configuration value can be injected via environment variable
+            $configValue = $this->getOptionValueFromConfig($option, null);
+            if ($configValue !== null && $this->isOptionGiven($option)) {
+                throw new \Exception('Option ' . $option . ' is set by config (environment variable)');
+            }
+
             $this->addOption(
-                str_replace('_', '-', $field->fieldname),
+                $option,
                 null,
                 $field->required ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL,
                 Text::_(((string)$field->getAttribute('label')) . '_SHORT'),
@@ -350,15 +358,12 @@ class InstallCommand extends AbstractCommand
      */
     protected function getStringFromOption($option, $question, FormField $field): string
     {
-        // The symfony console unfortunately does not allow to check for parameters given by CLI without the defaults
-        $givenOption = false;
-        $answer      = null;
-
-        foreach ($_SERVER['argv'] as $arg) {
-            if ($arg == '--' . $option || strpos($arg, $option . '=')) {
-                $givenOption = true;
-            }
+        if (($configValue = $this->getOptionValueFromConfig($option, null)) !== null) {
+            return $configValue;
         }
+
+        $givenOption = $this->isOptionGiven($option);
+        $answer      = null;
 
         // If an option is given via CLI, we validate that value and return it.
         if ($givenOption || !$this->cliInput->isInteractive()) {
@@ -401,5 +406,58 @@ class InstallCommand extends AbstractCommand
         }
 
         return $answer;
+    }
+
+    /**
+     * Check if an option is given.
+     *
+     * @param   string  $option   Option name
+     *
+     * @return  bool
+     *
+     * @since   5.3.0
+     */
+    protected function isOptionGiven($option)
+    {
+        // The symfony console unfortunately does not allow to check for parameters given by CLI without the defaults
+        foreach ($_SERVER['argv'] as $arg) {
+            if ($arg == '--' . $option || strpos($arg, $option . '=')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get an option value from configuration.
+     *
+     * @param   string  $option   Option name
+     * @param   mixed   $default  Default value
+     *
+     * @return  mixed
+     *
+     * @since   5.3.0
+     */
+    protected function getOptionValueFromConfig($option, $default = null)
+    {
+        $optionsConfigs = [
+            'db-type'                => 'dbtype',
+            'db-host'                => 'host',
+            'db-name'                => 'db',
+            'db-user'                => 'user',
+            'db-pass'                => 'password',
+            'db-prefix'              => 'dbprefix',
+            'db-encryption'          => 'dbencryption',
+            'db-sslkey'              => 'dbsslkey',
+            'db-sslcert'             => 'dbsslcert',
+            'db-sslca'               => 'dbsslca',
+            'db-sslcipher'           => 'dbsslcipher',
+            'db-sslverifyservercert' => 'dbsslverifyservercert',
+        ];
+
+        $configKey = $optionsConfigs[$option] ?? str_replace('-', '_', $option);
+
+        return Factory::getApplication()->get($configKey, $default);
     }
 }
