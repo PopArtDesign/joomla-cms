@@ -324,12 +324,17 @@ class InstallCommand extends AbstractCommand
                 $default = $prefix;
             }
 
+            $option = str_replace('_', '-', $field->fieldname);
+
+            // Configuration value can be injected via environment variable
+            $configValue = $this->getOptionValueFromConfig($option, null);
+
             $this->addOption(
-                str_replace('_', '-', $field->fieldname),
+                $option,
                 null,
-                $field->required ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL,
+                $field->require && $configValue === null ? InputOption::VALUE_REQUIRED : InputOption::VALUE_OPTIONAL,
                 Text::_(((string)$field->getAttribute('label')) . '_SHORT'),
-                $default
+                $configValue ?? $default
             );
         }
 
@@ -379,13 +384,13 @@ class InstallCommand extends AbstractCommand
 
         // We don't have a CLI option and now interactively get that from the user.
         while (\is_null($answer) || $answer === false) {
+            $default = $this->getApplication()->getConsoleInput()->getOption($option);
+
             if (\in_array($option, ['admin-password', 'db-pass', 'public_folder'])) {
-                $answer = $this->ioStyle->askHidden($question);
+                $hidden = \sprintf('[<comment>%s</comment>]', str_repeat('*', \strlen($default)));
+                $answer = $this->ioStyle->askHidden($question . ' </>' . $hidden) ?? $default;
             } else {
-                $answer = $this->ioStyle->ask(
-                    $question,
-                    $this->getApplication()->getConsoleInput()->getOption($option)
-                );
+                $answer = $this->ioStyle->ask($question, $default);
             }
 
             $valid = $field->validate($answer);
@@ -401,5 +406,37 @@ class InstallCommand extends AbstractCommand
         }
 
         return $answer;
+    }
+
+    /**
+     * Get an option value from configuration.
+     *
+     * @param   string  $option   Option name
+     * @param   mixed   $default  Default value
+     *
+     * @return  mixed
+     *
+     * @since   5.3.0
+     */
+    protected function getOptionValueFromConfig($option, $default = null)
+    {
+        $optionsConfigs = [
+            'db-type'                => 'dbtype',
+            'db-host'                => 'host',
+            'db-name'                => 'db',
+            'db-user'                => 'user',
+            'db-pass'                => 'password',
+            'db-prefix'              => 'dbprefix',
+            'db-encryption'          => 'dbencryption',
+            'db-sslkey'              => 'dbsslkey',
+            'db-sslcert'             => 'dbsslcert',
+            'db-sslca'               => 'dbsslca',
+            'db-sslcipher'           => 'dbsslcipher',
+            'db-sslverifyservercert' => 'dbsslverifyservercert',
+        ];
+
+        $configKey = $optionsConfigs[$option] ?? str_replace('-', '_', $option);
+
+        return Factory::getApplication()->get($configKey, $default);
     }
 }
